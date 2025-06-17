@@ -1,0 +1,373 @@
+{
+  "name": "CS Agent Sales & Invoice Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ]
+      },
+      "id": "telegramTrigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "your-telegram-credential-id",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": "your-product-sheet-id",
+        "sheetName": "Products",
+        "range": "A2:E1000"
+      },
+      "id": "loadProducts",
+      "name": "Load Product Catalog",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [400, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "your-sheets-credential-id",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "message",
+        "model": "gpt-4",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a professional customer service agent for a sales company. Your job is to:\n\n1. PRODUCT INQUIRY: Help customers find products, provide information, and answer questions\n2. SALES PROCESS: Guide customers through purchase decisions\n3. ORDER TAKING: When customer wants to buy, collect their details and create orders\n4. INVOICE CREATION: After deal is closed, extract order information\n\nAvailable Products:\n{{ $('Load Product Catalog').all().map(item => `${item.json.Name} - $${item.json.Price} (${item.json.Description})`).join('\\n') }}\n\nFor order taking, respond with JSON in this format when deal is closed:\n{\n  \"action\": \"create_invoice\",\n  \"customer_name\": \"Customer Name\",\n  \"email\": \"customer@email.com\",\n  \"phone\": \"+1234567890\",\n  \"date\": \"2024-01-15\",\n  \"products\": [\n    {\"name\": \"Product Name\", \"quantity\": 2, \"price\": 99.99}\n  ],\n  \"notes\": \"Any special notes\"\n}\n\nOtherwise, respond naturally as a helpful sales agent."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.message.text }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "csAgent",
+      "name": "CS Agent AI",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.3,
+      "position": [600, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "your-openai-credential-id",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.choices[0].message.content }}",
+              "rightValue": "create_invoice",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "checkInvoiceAction",
+      "name": "Check if Invoice Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [800, 400]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.choices[0].message.content }}"
+      },
+      "id": "sendResponse",
+      "name": "Send Chat Response",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1000, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "your-telegram-credential-id",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "jsonSchema",
+        "jsonSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"action\": { \"type\": \"string\" },\n    \"customer_name\": { \"type\": \"string\" },\n    \"email\": { \"type\": \"string\" },\n    \"phone\": { \"type\": \"string\" },\n    \"date\": { \"type\": \"string\" },\n    \"products\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"name\": { \"type\": \"string\" },\n          \"quantity\": { \"type\": \"number\" },\n          \"price\": { \"type\": \"number\" }\n        }\n      }\n    },\n    \"notes\": { \"type\": \"string\" }\n  }\n}",
+        "text": "={{ $json.choices[0].message.content }}"
+      },
+      "id": "parseOrder",
+      "name": "Parse Order Data",
+      "type": "n8n-nodes-base.structuredOutputParser",
+      "typeVersion": 1,
+      "position": [1000, 500]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "your-orders-sheet-id",
+        "sheetName": "Orders",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.date }}",
+            "Customer": "={{ $json.customer_name }}",
+            "Email": "={{ $json.email }}",
+            "Phone": "={{ $json.phone }}",
+            "Products": "={{ $json.products.map(p => `${p.name} (${p.quantity}x)`).join(', ') }}",
+            "Total": "={{ $json.products.reduce((sum, p) => sum + (p.quantity * p.price), 0) }}",
+            "Notes": "={{ $json.notes }}",
+            "Status": "Invoice Generated"
+          }
+        },
+        "options": {}
+      },
+      "id": "saveOrder",
+      "name": "Save Order to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1200, 500],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "your-sheets-credential-id",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate invoice data\nconst orderData = $input.first().json;\n\n// Calculate totals\nconst items = orderData.products.map(product => {\n  const subtotal = product.quantity * product.price;\n  return {\n    name: product.name,\n    quantity: product.quantity,\n    price: product.price,\n    subtotal: subtotal\n  };\n});\n\nconst subtotalAmount = items.reduce((sum, item) => sum + item.subtotal, 0);\nconst taxRate = 0.10; // 10% tax\nconst taxAmount = subtotalAmount * taxRate;\nconst grandTotal = subtotalAmount + taxAmount;\n\n// Generate invoice number\nconst invoiceNumber = `INV-${Date.now()}`;\n\nreturn {\n  invoice_number: invoiceNumber,\n  customer_name: orderData.customer_name,\n  customer_email: orderData.email,\n  customer_phone: orderData.phone,\n  date: orderData.date,\n  items: items,\n  subtotal: subtotalAmount,\n  tax_rate: taxRate,\n  tax_amount: taxAmount,\n  grand_total: grandTotal,\n  notes: orderData.notes || ''\n};"
+      },
+      "id": "calculateInvoice",
+      "name": "Calculate Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Professional invoice HTML template\nconst data = $input.first().json;\nconst currentDate = new Date().toLocaleDateString();\n\nconst html = `<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Invoice ${data.invoice_number}</title>\n  <style>\n    body {\n      font-family: 'Arial', sans-serif;\n      margin: 0;\n      padding: 20px;\n      color: #333;\n      line-height: 1.6;\n    }\n    .invoice-header {\n      display: flex;\n      justify-content: space-between;\n      align-items: center;\n      margin-bottom: 30px;\n      padding-bottom: 20px;\n      border-bottom: 3px solid #2c5aa0;\n    }\n    .company-info {\n      text-align: left;\n    }\n    .company-info h1 {\n      color: #2c5aa0;\n      margin: 0;\n      font-size: 2.5em;\n    }\n    .invoice-info {\n      text-align: right;\n    }\n    .invoice-info h2 {\n      color: #2c5aa0;\n      margin: 0;\n      font-size: 1.8em;\n    }\n    .customer-section {\n      background: #f8f9fa;\n      padding: 20px;\n      margin: 20px 0;\n      border-radius: 8px;\n    }\n    .customer-section h3 {\n      color: #2c5aa0;\n      margin-top: 0;\n    }\n    .items-table {\n      width: 100%;\n      border-collapse: collapse;\n      margin: 30px 0;\n      box-shadow: 0 2px 5px rgba(0,0,0,0.1);\n    }\n    .items-table th {\n      background: #2c5aa0;\n      color: white;\n      padding: 15px;\n      text-align: left;\n      font-weight: bold;\n    }\n    .items-table td {\n      padding: 12px 15px;\n      border-bottom: 1px solid #ddd;\n    }\n    .items-table tr:nth-child(even) {\n      background: #f8f9fa;\n    }\n    .items-table tr:hover {\n      background: #e3f2fd;\n    }\n    .totals-section {\n      float: right;\n      width: 300px;\n      margin-top: 20px;\n    }\n    .totals-table {\n      width: 100%;\n      border-collapse: collapse;\n    }\n    .totals-table td {\n      padding: 8px 15px;\n      border-bottom: 1px solid #ddd;\n    }\n    .totals-table .total-row {\n      background: #2c5aa0;\n      color: white;\n      font-weight: bold;\n      font-size: 1.1em;\n    }\n    .footer {\n      clear: both;\n      margin-top: 50px;\n      padding-top: 20px;\n      border-top: 1px solid #ddd;\n      text-align: center;\n      color: #666;\n    }\n    .notes {\n      margin: 30px 0;\n      padding: 15px;\n      background: #fff3cd;\n      border: 1px solid #ffeaa3;\n      border-radius: 5px;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"invoice-header\">\n    <div class=\"company-info\">\n      <h1>Your Company</h1>\n      <p>123 Business Street<br>\n      City, State 12345<br>\n      Phone: (555) 123-4567<br>\n      Email: info@yourcompany.com</p>\n    </div>\n    <div class=\"invoice-info\">\n      <h2>INVOICE</h2>\n      <p><strong>Invoice #:</strong> ${data.invoice_number}<br>\n      <strong>Date:</strong> ${data.date}<br>\n      <strong>Generated:</strong> ${currentDate}</p>\n    </div>\n  </div>\n\n  <div class=\"customer-section\">\n    <h3>Bill To:</h3>\n    <p><strong>${data.customer_name}</strong><br>\n    Email: ${data.customer_email}<br>\n    Phone: ${data.customer_phone}</p>\n  </div>\n\n  <table class=\"items-table\">\n    <thead>\n      <tr>\n        <th>Description</th>\n        <th style=\"text-align: center;\">Quantity</th>\n        <th style=\"text-align: right;\">Unit Price</th>\n        <th style=\"text-align: right;\">Total</th>\n      </tr>\n    </thead>\n    <tbody>\n      ${data.items.map(item => `\n        <tr>\n          <td>${item.name}</td>\n          <td style=\"text-align: center;\">${item.quantity}</td>\n          <td style=\"text-align: right;\">$${item.price.toFixed(2)}</td>\n          <td style=\"text-align: right;\">$${item.subtotal.toFixed(2)}</td>\n        </tr>\n      `).join('')}\n    </tbody>\n  </table>\n\n  <div class=\"totals-section\">\n    <table class=\"totals-table\">\n      <tr>\n        <td>Subtotal:</td>\n        <td style=\"text-align: right;\">$${data.subtotal.toFixed(2)}</td>\n      </tr>\n      <tr>\n        <td>Tax (${(data.tax_rate * 100).toFixed(0)}%):</td>\n        <td style=\"text-align: right;\">$${data.tax_amount.toFixed(2)}</td>\n      </tr>\n      <tr class=\"total-row\">\n        <td>TOTAL:</td>\n        <td style=\"text-align: right;\">$${data.grand_total.toFixed(2)}</td>\n      </tr>\n    </table>\n  </div>\n\n  ${data.notes ? `\n  <div class=\"notes\">\n    <h4>Notes:</h4>\n    <p>${data.notes}</p>\n  </div>\n  ` : ''}\n\n  <div class=\"footer\">\n    <p>Thank you for your business!<br>\n    <small>This invoice was generated automatically on ${currentDate}</small></p>\n  </div>\n</body>\n</html>`;\n\nreturn {\n  html: html,\n  invoice_number: data.invoice_number,\n  customer_name: data.customer_name\n};"
+      },
+      "id": "generateInvoiceHTML",
+      "name": "Generate Invoice HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 500]
+    },
+    {
+      "parameters": {
+        "operation": "htmlToPdf",
+        "html": "={{ $json.html }}",
+        "options": {
+          "format": "A4",
+          "margin": {
+            "top": "20mm",
+            "bottom": "20mm",
+            "left": "15mm",
+            "right": "15mm"
+          },
+          "printBackground": true
+        }
+      },
+      "id": "convertToPDF",
+      "name": "Convert to PDF",
+      "type": "n8n-nodes-base.htmlToPdf", 
+      "typeVersion": 1.1,
+      "position": [1800, 500]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "fileContent": "={{ $binary.data }}",
+        "name": "Invoice_{{ $('Generate Invoice HTML').item.json.invoice_number }}_{{ $('Generate Invoice HTML').item.json.customer_name.replace(/[^a-zA-Z0-9]/g, '_') }}.pdf",
+        "parents": [
+          "your-invoices-folder-id"
+        ],
+        "options": {}
+      },
+      "id": "uploadToGoogleDrive",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2000, 500],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "your-drive-credential-id",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "✅ **Invoice Generated Successfully!**\\n\\n📋 **Invoice:** {{ $('Generate Invoice HTML').item.json.invoice_number }}\\n👤 **Customer:** {{ $('Generate Invoice HTML').item.json.customer_name }}\\n💰 **Total:** ${{ $('Calculate Invoice').item.json.grand_total.toFixed(2) }}\\n\\n📎 Invoice has been saved to Google Drive\\n\\nThank you for your business! 🎉"
+      },
+      "id": "sendInvoiceConfirmation",
+      "name": "Send Invoice Confirmation",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2200, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "your-telegram-credential-id",
+          "name": "Telegram API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "telegramTrigger": {
+      "main": [
+        [
+          {
+            "node": "loadProducts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "loadProducts": {
+      "main": [
+        [
+          {
+            "node": "csAgent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "csAgent": {
+      "main": [
+        [
+          {
+            "node": "checkInvoiceAction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "checkInvoiceAction": {
+      "main": [
+        [
+          {
+            "node": "sendResponse",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "parseOrder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parseOrder": {
+      "main": [
+        [
+          {
+            "node": "saveOrder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "saveOrder": {
+      "main": [
+        [
+          {
+            "node": "calculateInvoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculateInvoice": {
+      "main": [
+        [
+          {
+            "node": "generateInvoiceHTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "generateInvoiceHTML": {
+      "main": [
+        [
+          {
+            "node": "convertToPDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "convertToPDF": {
+      "main": [
+        [
+          {
+            "node": "uploadToGoogleDrive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "uploadToGoogleDrive": {
+      "main": [
+        [
+          {
+            "node": "sendInvoiceConfirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
