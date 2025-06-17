@@ -91,7 +91,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=You are an intelligent invoice parser. I will give you raw text extracted from a PDF invoice. \n\n========================\nSTART OF RAW INVOICE TEXT\n\n{{ $json.text }}\n\nEND OF RAW INVOICE TEXT\n========================\n\nYour job is to:\n\n1. Extract key information from the invoice such as:\n   - invoice_number\n   - invoice_date\n   - due_date (if available)\n   - vendor_name\n   - total_amount\n   - currency (e.g., USD, IDR, etc.)\n   - items (as a list of item descriptions and their amounts)\n   - tax (if available)\nAfter Extracting Send an email to fill\n  -extract message\n\n2. Detect the invoice **category**, such as:\n   - Utilities\n   - Office Supplies\n   - Travel\n   - Software\n   - Food & Beverage\n   - Others (if unknown)\n\n3. Return the result in this exact JSON format:\n\n```json\n{\n  \"invoice_number\": \"\",\n  \"invoice_date\": \"\",\n  \"due_date\": \"\",\n  \"vendor_name\": \"\",\n  \"total_amount\": \"\",\n  \"currency\": \"\",\n  \"items\": [\n    {\n      \"Name\": \"\"\n    }\n  ],\n  \"tax\": \"\",\n  \"category\": \"\",\n  \"Success Messages\": \"\"\n}\n",
+        "text": "=You are an intelligent invoice parser. I will give you raw text extracted from a PDF invoice. You Can Access english And Bahasa indonesia\n\n========================\nSTART OF RAW INVOICE TEXT\n\n{{ $json.text }}\n\nEND OF RAW INVOICE TEXT\n========================\n\nYour job is to:\n\n1. Extract key information from the invoice such as:\n   - invoice_number\n   - invoice_date\n   - due_date (if available)\n   - vendor_name\n   - total_amount\n   - currency (e.g., USD, IDR, etc.)\n   - items (as a list of item descriptions and their amounts)\n   - tax (if available)\nAfter Extracting Send an email to fill\n  -extract message\n\n2. Detect the invoice **category**, such as:\n   - Utilities\n   - Office Supplies\n   - Travel\n   - Software\n   - Food & Beverage\n   - Others (if unknown)\n\n3. Return the result in this exact JSON format:\n\n```json\n{\n  \"invoice_number\": \"\",\n  \"invoice_date\": \"\",\n  \"due_date\": \"\",\n  \"vendor_name\": \"\",\n  \"total_amount\": \"\",\n  \"currency\": \"\",\n  \"items\": [\n    {\n      \"Name\": \"\"\n    }\n  ],\n  \"tax\": \"\",\n  \"category\": \"\",\n  \"Success Messages\": \"\"\n}\n",
         "hasOutputParser": true,
         "options": {}
       },
@@ -102,7 +102,8 @@
         900,
         200
       ],
-      "typeVersion": 1.9
+      "typeVersion": 1.9,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -227,7 +228,7 @@
       "name": "Insert Invoice Data",
       "type": "n8n-nodes-base.googleSheets",
       "position": [
-        1500,
+        2520,
         200
       ],
       "typeVersion": 4.5,
@@ -308,6 +309,87 @@
     },
     {
       "parameters": {
+        "sendTo": "echaaabdillah@gmail.com",
+        "subject": "Invoice Report Update",
+        "message": "=Invoice Report update for :  {{ $json.output.invoice_number }}, {{ $json.output.vendor_name }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2180,
+        180
+      ],
+      "id": "390add1c-aedc-4007-8092-fc76bd7fa6d3",
+      "name": "Gmail",
+      "webhookId": "cc92aab3-1d58-4977-8b83-a424a758f745",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "y3vofxHgGb0K3yy6",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2a7ed223-65d0-44eb-8df8-a5f618ee154e",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "=true",
+              "operator": {
+                "type": "boolean",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1280,
+        200
+      ],
+      "id": "a3f61071-6baa-47bb-acb8-2fdcb1ed11d9",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "sendTo": "echaaabdillah@gmail.com",
+        "subject": "Report Update Error",
+        "message": "Error Updating Report",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2040,
+        420
+      ],
+      "id": "af71778d-9103-4c92-8d64-cfbe807830d9",
+      "name": "Gmail1",
+      "webhookId": "35deb195-18ff-48bf-bf38-338463f639a8",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "y3vofxHgGb0K3yy6",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
         "fieldToSplitOut": "output.items",
         "include": "allOtherFields",
         "options": {}
@@ -315,34 +397,11 @@
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        1260,
-        200
+        1800,
+        160
       ],
-      "id": "68109979-303c-4309-98b4-450e0d968af4",
+      "id": "6ab76d21-917a-4189-ba49-b6cd47c4a9e5",
       "name": "Split Out"
-    },
-    {
-      "parameters": {
-        "sendTo": "echaaabdillah@gmail.com",
-        "subject": "Report Update",
-        "message": "=Successfully new invoice report + {{ $json.output }}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        1260,
-        20
-      ],
-      "id": "2682e1a4-665f-4404-88a2-94c2b12d2a88",
-      "name": "Gmail",
-      "webhookId": "35e135e7-d187-4459-ba4d-19b966c81d3d",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "y3vofxHgGb0K3yy6",
-          "name": "Gmail account"
-        }
-      }
     }
   ],
   "pinData": {},
@@ -384,12 +443,7 @@
       "main": [
         [
           {
-            "node": "Split Out",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Gmail",
+            "node": "If",
             "type": "main",
             "index": 0
           }
@@ -423,7 +477,7 @@
         ]
       ]
     },
-    "Split Out": {
+    "Gmail": {
       "main": [
         [
           {
@@ -433,13 +487,42 @@
           }
         ]
       ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "4d47fbcb-b38e-41b0-882c-1179ba434d40",
+  "versionId": "baf743fa-caec-4e03-b2fe-ebe174cee658",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "f8fa4e59c83edcd3949d2bce8db5e0ab143feb43b4db435d008057388bada0e9"
